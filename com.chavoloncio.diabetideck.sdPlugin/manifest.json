@@ -4,10 +4,10 @@
     "Author":  "Chavoloncio",
     "Version":  "0.1.0",
     "Description":  "Muestra la glucosa de Dexcom en StreamDock",
-    "Icon":  "images/plugin.png",
+    "Icon":  "images/plugin",
     "Category":  "Salud",
-    "CategoryIcon":  "images/plugin.png",
-    "SDKVersion":  1,
+    "CategoryIcon":  "images/plugin",
+    "SDKVersion":  2,
     "CodePath":  "plugin/index.js",
     "Nodejs":  {
                    "Version":  "20"
@@ -22,18 +22,15 @@
                     {
                         "Name":  "Glucosa de prueba",
                         "UUID":  "com.chavoloncio.diabetideck.glucose",
-                        "Icon":  "images/plugin.png",
+                        "Icon":  "images/plugin",
                         "Tooltip":  "Muestra una glucosa ficticia",
                         "Controllers":  [
                                             "Keypad"
                                         ],
                         "States":  [
                                        {
-                                           "Title":  "125 mg/dL",
-                                           "FontSize":  "12",
-                                           "FontStyle":  "Bold",
-                                           "TitleColor":  "#00FF88",
-                                           "TitleAlignment":  "middle"
+                                           "State":  0,
+                                           "Image":  "images/plugin"
                                        }
                                    ]
                     }
