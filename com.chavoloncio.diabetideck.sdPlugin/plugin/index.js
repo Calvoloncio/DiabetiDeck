@@ -1,4 +1,7 @@
-﻿const WebSocket = require("ws");
+﻿
+
+const WebSocket = require("ws");
+const http = require("http");
 
 const args = process.argv.slice(2);
 
@@ -16,14 +19,69 @@ if (!port || !pluginUUID) {
     process.exit(1);
 }
 
-console.log("Iniciando DiabetiDeck...");
-console.log("Puerto:", port);
-console.log("UUID:", pluginUUID);
-
 const ws = new WebSocket(`ws://127.0.0.1:${port}`);
+const teclasVisibles = new Set();
+
+function actualizarTitulo(context, titulo) {
+    if (ws.readyState !== WebSocket.OPEN) {
+        return;
+    }
+
+    ws.send(JSON.stringify({
+        event: "setTitle",
+        context: context,
+        payload: {
+            title: titulo,
+            target: 0
+        }
+    }));
+}
+
+function consultarGlucosa() {
+    http.get("http://127.0.0.1:8765/glucose", (respuesta) => {
+        let datos = "";
+
+        respuesta.on("data", (parte) => {
+            datos += parte;
+        });
+
+        respuesta.on("end", () => {
+            try {
+                const lectura = JSON.parse(datos);
+                let titulo = "Sin datos";
+
+                if (lectura.ok && Number.isFinite(lectura.value)) {
+                    const flecha = lectura.trend || "";
+                    titulo = `${lectura.value} mg/dL ${flecha}`;
+                } else if (lectura.value !== null &&
+                           lectura.value !== undefined) {
+                    titulo = "Datos antiguos";
+                }
+
+                for (const context of teclasVisibles) {
+                    actualizarTitulo(context, titulo);
+                }
+
+                console.log("Estado de glucosa actualizado:", titulo);
+            } catch (error) {
+                console.error("Error leyendo los datos:", error.message);
+
+                for (const context of teclasVisibles) {
+                    actualizarTitulo(context, "Sin datos");
+                }
+            }
+        });
+    }).on("error", (error) => {
+        console.error("No se puede conectar con el servicio:", error.message);
+
+        for (const context of teclasVisibles) {
+            actualizarTitulo(context, "Sin conexión");
+        }
+    });
+}
 
 ws.on("open", () => {
-    console.log("WebSocket conectado.");
+    console.log("Conectado a StreamDock.");
 
     ws.send(JSON.stringify({
         event: registerEvent,
@@ -35,35 +93,36 @@ ws.on("open", () => {
 
 ws.on("message", (data) => {
     try {
-        const message = JSON.parse(data.toString());
+        const mensaje = JSON.parse(data.toString());
 
-        console.log("Evento recibido:", message.event);
-
-        if (message.event === "passHello") {
-            console.log("StreamDock ha respondido al registro.");
+        if (mensaje.event === "passHello") {
+            console.log("Plugin registrado correctamente.");
         }
 
-        if (message.event === "willAppear") {
-            ws.send(JSON.stringify({
-                event: "setTitle",
-                context: message.context,
-                payload: {
-                    title: "125 mg/dL",
-                    target: 0
-                }
-            }));
+        if (mensaje.event === "willAppear") {
+            teclasVisibles.add(mensaje.context);
+            consultarGlucosa();
+        }
 
-            console.log("Título de prueba enviado.");
+        if (mensaje.event === "willDisappear") {
+            teclasVisibles.delete(mensaje.context);
         }
     } catch (error) {
-        console.error("Error procesando el mensaje:", error.message);
+        console.error("Error procesando el evento:", error.message);
     }
 });
 
+const intervalo = setInterval(() => {
+    if (teclasVisibles.size > 0) {
+        consultarGlucosa();
+    }
+}, 30000);
+
 ws.on("error", (error) => {
-    console.error("Error de conexión:", error.message);
+    console.error("Error de StreamDock:", error.message);
 });
 
 ws.on("close", () => {
+    clearInterval(intervalo);
     console.log("Conexión cerrada por StreamDock.");
 });
