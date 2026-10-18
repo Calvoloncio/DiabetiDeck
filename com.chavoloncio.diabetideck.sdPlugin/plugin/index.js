@@ -22,20 +22,91 @@ if (!port || !pluginUUID) {
 const ws = new WebSocket(`ws://127.0.0.1:${port}`);
 const teclasVisibles = new Set();
 
-function actualizarTitulo(context, titulo) {
+
+function actualizarImagen(context, valor, tendencia, estado = "") {
     if (ws.readyState !== WebSocket.OPEN) {
         return;
     }
 
+    let colorGlucosa = "#FFFFFF";
+
+    if (estado === "") {
+        if (valor < 70) {
+            colorGlucosa = "#FF3030";       // Rojo
+        } else if (valor < 180) {
+            colorGlucosa = "#39E079";       // Verde
+        } else if (valor < 250) {
+            colorGlucosa = "#FFE44D";       // Amarillo
+        } else if (valor < 380) {
+            colorGlucosa = "#FFAD42";       // Amarillo anaranjado
+        } else {
+            colorGlucosa = "#FF493D";       // Naranja rojizo
+        }
+    }
+
+
+
+    const contenido = estado === "SIN CONEXIÓN"
+        ? `
+            <g fill="none" stroke="#FFD447" stroke-width="5"
+            stroke-linecap="round">
+                <path d="M35 48 Q72 13 109 48"/>
+                <path d="M47 61 Q72 38 97 61"/>
+                <path d="M59 74 Q72 62 85 74"/>
+            </g>
+            <circle cx="72" cy="88" r="4" fill="#FFD447"/>
+            <text x="72" y="119" text-anchor="middle"
+                font-size="14" font-weight="bold"
+                fill="#FFD447">SIN CONEXIÓN</text>
+        `
+        : estado
+            ? `<text x="72" y="68" text-anchor="middle"
+                font-size="15" font-weight="bold"
+                fill="#FFFFFF">${estado}</text>`
+            : `
+                <text x="72" y="66" text-anchor="middle"
+                    font-size="39" font-weight="bold"
+                    fill="${colorGlucosa}">${valor}</text>
+                <text x="72" y="91" text-anchor="middle"
+                    font-size="17" fill="#B7C5CE">mg/dL</text>
+                <text x="72" y="119" text-anchor="middle"
+                    font-size="30" font-weight="bold"
+                    fill="#43D9A3">${tendencia}</text>
+            `;
+
+
+    const svg = `
+        <svg xmlns="http://www.w3.org/2000/svg"
+             width="144" height="144" viewBox="0 0 144 144">
+            <rect width="144" height="144" rx="14" fill="#101820"/>
+            ${contenido}
+        </svg>
+    `;
+
+    const imagen = "data:image/svg+xml;charset=utf8,"
+        + encodeURIComponent(svg);
+
+    ws.send(JSON.stringify({
+        event: "setImage",
+        context: context,
+        payload: {
+            image: imagen,
+            target: 0
+        }
+    }));
+
+    // Evita que el título anterior siga apareciendo debajo.
     ws.send(JSON.stringify({
         event: "setTitle",
         context: context,
         payload: {
-            title: titulo,
+            title: "",
             target: 0
         }
     }));
 }
+
+
 
 function consultarGlucosa() {
     http.get("http://127.0.0.1:8765/glucose", (respuesta) => {
@@ -48,26 +119,28 @@ function consultarGlucosa() {
         respuesta.on("end", () => {
             try {
                 const lectura = JSON.parse(datos);
-                let titulo = "Sin datos";
-
-                if (lectura.ok && Number.isFinite(lectura.value)) {
-                    const flecha = lectura.trend || "";
-                    titulo = `${lectura.value} mg/dL ${flecha}`;
-                } else if (lectura.value !== null &&
-                           lectura.value !== undefined) {
-                    titulo = "Datos antiguos";
-                }
 
                 for (const context of teclasVisibles) {
-                    actualizarTitulo(context, titulo);
+                    if (lectura.ok && Number.isFinite(lectura.value)) {
+                        actualizarImagen(
+                            context,
+                            Math.round(lectura.value),
+                            lectura.trend || ""
+                        );
+                    } else if (
+                        lectura.value !== null &&
+                        lectura.value !== undefined
+                    ) {
+                        actualizarImagen(context, "", "", "DATOS ANTIGUOS");
+                    } else {
+                        actualizarImagen(context, "", "", "SIN DATOS");
+                    }
                 }
-
-                console.log("Estado de glucosa actualizado:", titulo);
             } catch (error) {
                 console.error("Error leyendo los datos:", error.message);
 
                 for (const context of teclasVisibles) {
-                    actualizarTitulo(context, "Sin datos");
+                    actualizarImagen(context, "", "", "ERROR DE DATOS");
                 }
             }
         });
@@ -75,10 +148,11 @@ function consultarGlucosa() {
         console.error("No se puede conectar con el servicio:", error.message);
 
         for (const context of teclasVisibles) {
-            actualizarTitulo(context, "Sin conexión");
+            actualizarImagen(context, "", "", "SIN CONEXIÓN");
         }
     });
 }
+
 
 ws.on("open", () => {
     console.log("Conectado a StreamDock.");
